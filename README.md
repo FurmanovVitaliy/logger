@@ -10,6 +10,8 @@ func main() {
 		logger.WithSource(true), logger.IsPrettyOut(true))
 }
 ```
+## Stdout 
+![Logger Image](./assets/logger.png)
 
 ## Example of data preparation:
 ```go
@@ -49,5 +51,4 @@ func main() {
 }
 
 ```
-## Stdout 
-![Logger Image](./assets/logger.png)
+
