@@ -50,4 +50,4 @@ func main() {
 
 ```
 ## Stdout 
-![Logger Image](./assets/logger.png)
+![Logger Image](./logger/assets/logger.png)
