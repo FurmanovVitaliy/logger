@@ -18,8 +18,6 @@ import (
 	"golang.org/x/term"
 )
 
-const maxStringLen = 218
-
 var (
 	tWidth       int
 	lWidth       int
@@ -120,8 +118,6 @@ func (h *prettyHandler) Handle(ctx context.Context, r slog.Record) error {
 		if goa.group != "" {
 			group := slog.String("GROUP", goa.group)
 			buf = h.appendAttr(buf, attrWithInfo{group, "", false, false, false}, indentLevel)
-			/*} else if len(goas[i].attrs) == 1 {
-			buf = h.appendAttr(buf, attrWithInfo{goas[i].attrs[0], "", false, false, false}, indentLevel)*/
 		} else {
 			for _, a := range goa.attrs {
 				buf = h.appendAttr(buf, attrWithInfo{a, "", false, false, false}, indentLevel)
@@ -245,36 +241,43 @@ func (h *prettyHandler) appendAttr(buf []byte, a attrWithInfo, indentLevel int) 
 		}
 		buf = fmt.Append(buf, "\n")
 	case slog.KindAny:
-
 		var data map[string]interface{}
 
 		h.jsonH.WithAttrs([]slog.Attr{a.attr}).Handle(context.Background(), slog.Record{})
 		jsonData := jsonBuf.Bytes()
-
 		if err := json.Unmarshal(jsonData, &data); err != nil {
 			buf = h.appendAttr(buf, attrWithInfo{slog.String(a.attr.Key, a.attr.Value.String()), "", a.firstChild, a.innerChild, a.lastChild}, indentLevel)
 		} else {
 			delete(data, "level")
 			delete(data, "msg")
-			for _, value := range data {
-				data = value.(map[string]interface{})
-				break
+
+			if len(data) > 0 {
+				for key, value := range data {
+					// Удаляем текущий ключ и добавляем новый с именем " "
+					delete(data, key)
+					data[""] = value
+					break // Завершаем после изменения первого ключа
+				}
 			}
-			prettyJSON, err := json.MarshalIndent(data, "", "   ")
+			prettyJSON, err := json.MarshalIndent(data, "", "  ")
 			if err != nil {
 				buf = h.appendAttr(buf, attrWithInfo{slog.String(a.attr.Key, a.attr.Value.String()), "", a.firstChild, a.innerChild, a.lastChild}, indentLevel)
 			} else {
-
 				keyL := runewidth.StringWidth(a.attr.Key)
 				sameSymbol := centerString("\u2e17", keyL)
 				space := keyL - runewidth.StringWidth(sameSymbol)
 				if space < 0 {
-					space *= -1
+					space = -1
 				}
 				key := strings.Repeat(" ", space) + a.attr.Key
 				lines := strings.Split(string(prettyJSON), "\n")
 
+				lines = lines[1 : len(lines)-1]
+				lines[0] = lines[0][6:]
+				lines[len(lines)-1] = "]"
+
 				for i, line := range lines {
+
 					str := fmt.Sprintf("%s:%q", colorizeKey(indentLevel, key), line)
 					if i > 0 {
 						str = fmt.Sprintf("%s  %q", colorizeKey(indentLevel, sameSymbol), line)
@@ -289,11 +292,11 @@ func (h *prettyHandler) appendAttr(buf []byte, a attrWithInfo, indentLevel int) 
 					}
 
 					if i == 0 {
-						str = appendInRight(str, fmt.Sprintf("%s %s", "╕", "json"))
+						str = appendInRight(str, fmt.Sprintf("%s %s", "╕", "struct"))
 					} else if i == len(lines)-1 {
-						str = appendInRight(str, fmt.Sprintf("%s %s", "╛", "    "))
+						str = appendInRight(str, fmt.Sprintf("%s %s", "╛", "      "))
 					} else {
-						str = appendInRight(str, fmt.Sprintf("%s %s", "│", "    "))
+						str = appendInRight(str, fmt.Sprintf("%s %s", "│", "      "))
 					}
 					buf = fmt.Append(buf, "│")
 					buf = fmt.Append(buf, str)
@@ -302,6 +305,7 @@ func (h *prettyHandler) appendAttr(buf []byte, a attrWithInfo, indentLevel int) 
 				}
 			}
 		}
+
 		jsonBuf.Reset()
 
 	case slog.KindGroup:
@@ -345,7 +349,7 @@ func (h *prettyHandler) appendAttr(buf []byte, a attrWithInfo, indentLevel int) 
 
 			if i == 0 {
 				if i == len(attrs)-1 {
-					buf = h.appendAttr(buf, attrWithInfo{ga, "*", true, false, true}, indentLevel)
+					buf = h.appendAttr(buf, attrWithInfo{ga, "", true, false, true}, indentLevel)
 				} else {
 					buf = h.appendAttr(buf, attrWithInfo{ga, "", true, false, false}, indentLevel)
 				}
