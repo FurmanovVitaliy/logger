@@ -1,0 +1,66 @@
+app:
+  name: work-station
+  version: 0.1.0
+
+environment: local #local, dev, prod
+
+logger:
+  level: debug #debug, info, warn, error
+  json: false 
+  source: true
+
+grpc:
+  port: 44046
+  tls_enabled: true
+  timeout: 20s
+
+  cert: ./cert/cert.pem
+  key: ./cert/key.pem
+
+docker: #Put your docker images names here
+  pulse_image: arch:pulseaudio 
+  video_image: arch:ffmpeg-video
+  audio_image: arch:ffmpeg-audio
+  protone_image: arch:portprotone
+  network_mode: host
+  renderer_path: /dev/dri/renderD128
+  
+video_capture: #All variables for video capture can be changed but not deleted
+  env:
+    - "RESOLUTION=w=1920:h=1080"
+    - "PIX_FORMAT=nv12"
+    - "THREADS=2"
+    - "FILTER_THREADS=1"
+    - "THREAD_QUEUE_SIZE=128"
+    - "FPS=60"
+    - "GOP=20"
+    - "CODEC=h264_vaapi"
+    - "TUNE=zerolatency"
+    - "PRESET=ultrafast"
+    - "PROFILE=high"
+    - "BITRATE=5000"
+    - "BUF_SIZE=10000"
+    - "PKT_SIZE=1400"
+
+audio_capture:
+  env:
+    - "PKT_SIZE=1000"
+
+streamer:
+  video_codec: h264 # must be the same as in docker
+  audio_codec: opus
+
+users_file_storage: #Path to store user files !!!IMPORTANT (add your path here)
+  path : AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+  fs_init_files_dir: /home/USER/Development/Projects/cloud-gaming-storage/FILE_BASE
+
+virtual_display_initializer: #Path to scripts for virtual displays !!!IMPORTANT (add your path here)
+  enable_virtual_displays_script_path: /home/vitalii/Development/Scripts/enable_virtual_displays/enable-virtual-screens.sh
+  display_info_json_path: /home/vitalii/Development/Scripts/enable_virtual_displays/display-info.json
+
+udp_reader: 
+  min_port: 5000 #UDP reader config/ this rage of ports will be used for udp reader
+  max_port: 6000 #UDP reader config/ this rage of ports will be used for udp reader
+  read_buffer: 10000
+  udp_buffer: 10000
+

@@ -13,7 +13,7 @@ import (
 var cursorIndex, linieIndex, lines, wWidth, rWidth, next, row int
 var addNext bool
 
-func addSysInfo(buf *[]byte) {
+func addSysInfo(buf *[]byte, sWidth int) {
 	wWidth = sWidth
 	lines = len(strings.Split(string(*buf), "\n")) - 2
 	if lines < 5 {
