@@ -29,7 +29,7 @@ type attrWithInfo struct {
 	attr       slog.Attr
 	extraLine  string
 	firstChild bool
-	innerChild bool
+	neasted    bool
 	lastChild  bool
 }
 
@@ -44,12 +44,13 @@ type prettyHandler struct {
 	mu    *sync.Mutex
 	out   io.Writer
 
-	jsonBuf      bytes.Buffer
-	tWidth       int
-	lWidth       int
-	firstLine    bool
-	lastLine     bool
-	activeIndent map[int]bool
+	jsonBuf             bytes.Buffer
+	tWidth              int
+	lWidth              int
+	firstLine           bool
+	lastLine            bool
+	disableActiveIndent bool
+	activeIndent        map[int]bool
 }
 
 func NewPrettyHandler(out io.Writer, opts *HandlerOptions) *prettyHandler {
@@ -77,14 +78,14 @@ func NewPrettyHandler(out io.Writer, opts *HandlerOptions) *prettyHandler {
 
 /*--------------------------------HANDLER---------------------------------------------------*/
 func (h *prettyHandler) Handle(ctx context.Context, r slog.Record) error {
-	h.mu.Lock()         // CHANGED
-	defer h.mu.Unlock() // CHANGED
+	h.mu.Lock()
+	defer h.mu.Unlock()
 
 	buf := make([]byte, 0, 1024)
 	var path, timestamp string
 	indentLevel := 0
 
-	// CHANGED: Логика расчета ширины
+	// terminal width logic
 	width, _, err := term.GetSize(int(os.Stdout.Fd()))
 	if err != nil {
 		width = 99
@@ -96,7 +97,7 @@ func (h *prettyHandler) Handle(ctx context.Context, r slog.Record) error {
 		timestamp = fmt.Sprintf("[%s %s]", "🕙", r.Time.Format(time.Stamp))
 	}
 
-	h.firstLine = true // CHANGED
+	h.firstLine = true
 	msg := slog.String(colorizeLevel(r.Level), r.Message)
 	if h.lWidth < len(msg.String())+10+len(timestamp) {
 		buf = h.appendAttr(buf, attrWithInfo{msg, "", false, false, false}, indentLevel)
@@ -106,6 +107,11 @@ func (h *prettyHandler) Handle(ctx context.Context, r slog.Record) error {
 	h.firstLine = false
 
 	for _, goa := range h.goas {
+		if len(goa.attrs) > 0 {
+			for _, a := range goa.attrs {
+				buf = h.appendAttr(buf, attrWithInfo{a, "", false, false, false}, indentLevel)
+			}
+		}
 		if goa.group != "" {
 			group := slog.String("GROUP", goa.group)
 			buf = h.appendAttr(buf, attrWithInfo{group, "", false, false, false}, indentLevel)
@@ -121,7 +127,7 @@ func (h *prettyHandler) Handle(ctx context.Context, r slog.Record) error {
 		fs := runtime.CallersFrames([]uintptr{r.PC})
 		f, _ := fs.Next()
 		path = fmt.Sprintf("%s:%d", f.File, f.Line)
-		h.lastLine = true // CHANGED
+		h.lastLine = true
 		source := slog.String("source", path)
 		buf = h.appendAttr(buf, attrWithInfo{source, "", false, false, false}, indentLevel)
 		h.lastLine = false
@@ -140,6 +146,7 @@ func (h *prettyHandler) appendAttr(buf []byte, a attrWithInfo, indentLevel int) 
 	if a.attr.Equal(slog.Attr{}) {
 		return buf
 	}
+
 	switch a.attr.Value.Kind() {
 	case slog.KindString:
 		groupLine := false
@@ -166,6 +173,7 @@ func (h *prettyHandler) appendAttr(buf []byte, a attrWithInfo, indentLevel int) 
 			buf = fmt.Append(buf, str)
 			buf = fmt.Append(buf, "│")
 		case h.lastLine:
+
 			str = fmt.Sprintf("[%s: %q] ", a.attr.Key, a.attr.Value.String())
 			str = h.alignValues(str, indentLevel, '╴', '─', true, a, false, false)
 			buf = fmt.Append(buf, "╰")
@@ -182,7 +190,8 @@ func (h *prettyHandler) appendAttr(buf []byte, a attrWithInfo, indentLevel int) 
 				buf = fmt.Append(buf, str)
 				buf = fmt.Append(buf, "│")
 			}
-		case a.innerChild:
+		case a.neasted:
+
 			if h.isLongValue(str, indentLevel) {
 				h.wrapLongValue(&buf, a, key, a.attr.Value.String(), indentLevel)
 			} else {
@@ -232,7 +241,7 @@ func (h *prettyHandler) appendAttr(buf []byte, a attrWithInfo, indentLevel int) 
 			buf = h.appendAttr(buf, attrWithInfo{ga, "", isFirst, true, isLast}, indentLevel)
 		}
 	default:
-		buf = h.appendAttr(buf, attrWithInfo{slog.String(a.attr.Key, a.attr.Value.String()), "", a.firstChild, a.innerChild, a.lastChild}, indentLevel)
+		buf = h.appendAttr(buf, attrWithInfo{slog.String(a.attr.Key, a.attr.Value.String()), "", a.firstChild, a.neasted, a.lastChild}, indentLevel)
 	}
 	return buf
 }
@@ -246,20 +255,25 @@ func (h *prettyHandler) isLongValue(str string, identLevel int) bool {
 func (h *prettyHandler) alignValues(text string, identLevel int, spacer, ident rune, center bool, a attrWithInfo, key, wraped bool) string {
 	prefix := strings.Repeat(" ", identLevel*6)
 
+	if identLevel == 1 && a.lastChild {
+		h.disableActiveIndent = true
+	}
+	if identLevel == 1 && a.firstChild {
+		h.disableActiveIndent = false
+	}
 	if identLevel > 1 {
-
 		prefix = h.addIndentSpaces(identLevel)
 	}
 
-	if !key && a.lastChild && a.innerChild {
+	if !key && a.lastChild && a.neasted {
 		h.activeIndent[identLevel] = false
 	}
-	if key && !a.lastChild && a.innerChild {
+	if key && !a.lastChild && a.neasted {
 		h.activeIndent[identLevel] = true
 	}
 
 	if !h.firstLine && !h.lastLine {
-		if key && !a.innerChild {
+		if key && !a.neasted {
 			text = "╼ " + text
 		} else if key {
 			text = "╼ " + text
@@ -288,7 +302,7 @@ func (h *prettyHandler) alignValues(text string, identLevel int, spacer, ident r
 	case a.lastChild:
 		prefix = prefix + "┗━━━"
 		text = prefix + text
-	case a.innerChild:
+	case a.neasted:
 		prefix = prefix + "┣━━━"
 		text = prefix + text
 	default:
@@ -345,7 +359,7 @@ func (h *prettyHandler) addIndentSpaces(parts int) string {
 	result := ""
 	for i := range parts {
 		part := runewidth.FillRight("", 6)
-		if h.activeIndent[i] {
+		if h.activeIndent[i] && !h.disableActiveIndent {
 			part = runewidth.FillRight("┃", 6)
 		}
 		result += part
